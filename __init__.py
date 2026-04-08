@@ -1,5 +1,6 @@
 import bpy
 import math
+import bpy_extras
 
 # Blenderに登録するアドオン情報
 bl_info = {
@@ -52,46 +53,91 @@ class MYADDON_OT_create_ico_sphere(bpy.types.Operator):
         return {'FINISHED'}
     
 # オペレータ シーン出力
-class MYADDON_OT_export_scene(bpy.types.Operator):
+class MYADDON_OT_export_scene(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
     bl_idname = "myaddon.myaddon_ot_export_scene"
     bl_label = "シーン出力"
     bl_description = "シーン情報を出力する"
+
+    # 出力するファイルの拡張子
+    filename_ext = ".scene"
 
     # 実行関数
     def execute(self, context):
         print("シーン情報を出力します")
 
-        # シーン内全てのオブジェクト
-        for object in bpy.context.scene.objects:
-            print(object.type + "-" + object.name)
-
-            #ローカルトランスフォーム行列から、移動、回転、拡縮を抽出
-            trans, rot, scale = object.matrix_local.decompose()
-
-            # 回転をQuaternionからEulerに変換
-            rot = rot.to_euler()
-
-            # radからdegに変換
-            rot.x = math.degrees(rot.x)
-            rot.y = math.degrees(rot.y)
-            rot.z = math.degrees(rot.z)
-
-            # トランスフォーム情報を表示
-            print("Trans(%f, %f, %f)" %(trans.x, trans.y, trans.z))
-            print("Rot(%f, %f, %f)" %(rot.x, rot.y , rot.z))
-            print("Scale(%f, %f, %f)" %(scale.x, scale.y, scale.z))
-
-            # 親オブジェクトの名前を表示
-            if object.parent:
-                print("Parent : " + object.parent.name)
-
-            print()
+        # エクスポート
+        self.export()
 
         print("シーン情報を出力しました")
 
         self.report({'INFO'}, "シーン情報を出力しました")
 
         return {'FINISHED'}
+    
+    # エクスポート
+    def export(self):
+        """ファイルに出力"""
+        print("シーン情報出力開始... %r" % self.filepath)
+
+        # ファイルをテキスト形式で書き出し用にオープン
+        # スコープを抜けると自動的にクローズされる
+        with open(self.filepath , "wt") as file:
+
+            # ファイルに文字列を書き込む
+            self.write_and_print(file, "SCENE")
+            self.write_and_print(file, '')
+
+            # シーン内全てのオブジェクト
+            for object in bpy.context.scene.objects:
+
+                # 親オブジェクトがあるものはスキップ
+                if object.parent:
+                    continue
+
+                # シーン直下のオブジェクトをルートノード（深さ0）とし、再帰関数で操作
+                self.parse_scene_recursive(file, object, 0)
+
+    # ファイル書き込みとコンソール表示
+    def write_and_print(self, file, str):
+        print(str)
+
+        file.write(str)
+        file.write('\n')
+
+    # シーン解析用再帰関数
+    def parse_scene_recursive(self, file, object, level):
+
+        # 深さ分のインデント
+        indent = ''
+        for i in range(level):
+            indent += "\t"
+
+        # オブジェクト名
+        self.write_and_print(file, indent + object.type + "-" + object.name)
+
+        #ローカルトランスフォーム行列から、移動、回転、拡縮を抽出
+        trans, rot, scale = object.matrix_local.decompose()
+
+        # 回転をQuaternionからEulerに変換
+        rot = rot.to_euler()
+
+        # radからdegに変換
+        rot.x = math.degrees(rot.x)
+        rot.y = math.degrees(rot.y)
+        rot.z = math.degrees(rot.z)
+
+        # トランスフォーム情報を表示
+        self.write_and_print(file,indent + "Trans(%f, %f, %f)" %(trans.x, trans.y, trans.z))
+        self.write_and_print(file,indent + "Rot(%f, %f, %f)" %(rot.x, rot.y , rot.z))
+        self.write_and_print(file,indent + "Scale(%f, %f, %f)" %(scale.x, scale.y, scale.z))
+
+        self.write_and_print(file, '')
+
+        # 子ノードへ進む
+        for child in object.children:
+            self.parse_scene_recursive(file, child, level + 1)
+
+
 
 # トップバーの拡張
 class TOPBAR_MT_my_menu(bpy.types.Menu):
