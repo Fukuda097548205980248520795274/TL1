@@ -4,6 +4,7 @@ import bpy_extras
 import gpu
 import gpu_extras.batch
 import copy
+import mathutils
 
 # Blenderに登録するアドオン情報
 bl_info = {
@@ -138,6 +139,24 @@ class MYADDON_OT_export_scene(bpy.types.Operator, bpy_extras.io_utils.ExportHelp
         if "file_name" in object:
             self.write_and_print(file, indent + "N %s" % object["file_name"])
 
+        # カスタムプロパティ 'collider'
+        if "collider" in object:
+            self.write_and_print(file, indent + "C %s" % object["collider"])
+
+            center = mathutils.Vector((0,0,0))
+            center[0] = object["collider_center"][0]
+            center[1] = object["collider_center"][1]
+            center[2] = object["collider_center"][2]
+
+            self.write_and_print(file, indent + "CC %f %f %f" % (center[0], center[1], center[2]))
+
+            size = mathutils.Vector((2,2,2))
+            size[0] = object["collider_size"][0]
+            size[1] = object["collider_size"][1]
+            size[2] = object["collider_size"][2]
+
+            self.write_and_print(file, indent + "CS %f %f %f" % (size[0], size[1], size[2]))
+
         self.write_and_print(file, indent + 'END')
         self.write_and_print(file, '')
 
@@ -200,6 +219,40 @@ class MYADDON_OT_add_filename(bpy.types.Operator):
 
         return {"FINISHED"}
 
+# オペレータ コライダー追加
+class MYADDON_OT_add_collider(bpy.types.Operator):
+    bl_idname = "myaddon.myaddon_ot_add_collider"
+    bl_label = "コライダー 追加"
+    bl_description = "['collider']カスタムプロパティを追加します"
+    bl_options = {"REGISTER","UNDO"}
+
+    def execute(self, context):
+        # ['collider']カスタムプロパティを追加
+        context.object["collider"] = "BOX"
+        context.object["collider_center"] = mathutils.Vector((0,0,0))
+        context.object["collider_size"] = mathutils.Vector((2,2,2))
+
+        return {"FINISHED"}
+
+# パネル コライダー
+class OBJECT_PT_collider(bpy.types.Panel):
+    bl_idname = "OBJECT_PT_collider"
+    bl_label = "Collider"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "object"
+
+    def draw(self, context):
+        #パネルに項目を追加
+        if "collider" in context.object:
+            # 既にコライダーがあれば、プロパティを表示する
+            self.layout.prop(context.object, '["collider"]', text="Type")
+            self.layout.prop(context.object, '["collider_center"]', text="Center")
+            self.layout.prop(context.object, '["collider_size"]', text="Size")
+        else:
+            # コライダーがなければ、コライダー追加ボタンを表示
+            self.layout.operator(MYADDON_OT_add_collider.bl_idname)
+
 # Blenderに登録するクラスリスト
 classes = (
     TOPBAR_MT_my_menu,
@@ -207,7 +260,9 @@ classes = (
     MYADDON_OT_create_ico_sphere,
     MYADDON_OT_export_scene,
     OBJECT_PT_file_name,
-    MYADDON_OT_add_filename
+    MYADDON_OT_add_filename,
+    MYADDON_OT_add_collider,
+    OBJECT_PT_collider,
 )
 
 # コライダー描画
@@ -237,22 +292,38 @@ class DrawCollider:
             [+0.5, +0.5, +0.5],
         ]
 
-        # サイズ
-        size = [2, 2, 2]
-
         for object in bpy.context.scene.objects:
+            # コライダープロパティがなければ描画しない
+            if not "collider" in object:
+                continue
+
+            # 中心点を取得
+            center = mathutils.Vector((0,0,0))
+            center[0] = object["collider_center"][0]
+            center[1] = object["collider_center"][1]
+            center[2] = object["collider_center"][2]
+
+            # サイズを取得
+            size = mathutils.Vector((2,2,2))
+            size[0] = object["collider_size"][0]
+            size[1] = object["collider_size"][1]
+            size[2] = object["collider_size"][2]
+
             # 追加前の頂点数
             start = len(vertices["pos"])
 
             # Boxの8頂点分を回す
             for offset in offsets:
                 # オブジェクトの中心座標をコピー
-                pos = copy.copy(object.location)
+                pos = copy.copy(center)
 
                 # 中心点を基準に各頂点ごとにずらす
                 pos[0] += offset[0] * size[0]
                 pos[1] += offset[1] * size[1]
                 pos[2] += offset[2] * size[2]
+
+                # ローカル座標 -> ワールド座標に変換
+                pos = object.matrix_world @ pos
 
                 # 頂点データリストに座標を追加
                 vertices['pos'].append(pos)
